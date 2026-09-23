@@ -146,10 +146,17 @@ def journal_mode() -> str:
 def connect() -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(config.db_path(), timeout=30.0)
     conn.row_factory = sqlite3.Row
-    # The value is allow-listed above; PRAGMA journal_mode cannot use a bound
-    # parameter.  DELETE avoids SQLite shared-memory mmap on macOS bind mounts.
-    conn.execute(f"PRAGMA journal_mode={journal_mode()}")
+    # busy_timeout must be in place before any statement that may wait on a
+    # lock (journal_mode can contend with Docker bind-mount lock translation).
     conn.execute("PRAGMA busy_timeout=30000")
+    mode = journal_mode()
+    current = conn.execute("PRAGMA journal_mode").fetchone()
+    if current is None or str(current[0]).upper() != mode:
+        # The value is allow-listed above; PRAGMA journal_mode cannot use a
+        # bound parameter.  DELETE avoids SQLite shared-memory mmap on macOS
+        # bind mounts.  Setting the mode takes locks that an already-WAL (or
+        # already-DELETE) database does not need — skip when it matches.
+        conn.execute(f"PRAGMA journal_mode={mode}")
     conn.execute("PRAGMA foreign_keys=ON")
     try:
         yield conn

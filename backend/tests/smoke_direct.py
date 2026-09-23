@@ -1,14 +1,26 @@
 """直接调用流水线的 smoke 脚本（不经 HTTP），快速验证导入→分析→事件全链路。"""
 import json
+import os
 import shutil
 import sys
 import time
 from pathlib import Path
 
+# 独立数据目录：本脚本在宿主机运行，若沿用仓库内 data/ 会与
+# tennis-lab compose 容器共写同一 SQLite（Docker bind mount 的锁翻译
+# 造成跨 VM 偶发 database is locked，等满 busy timeout 后失败）
+os.environ.setdefault("TENNIS_DATA_DIR", "/tmp/tennis-smoke-data")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import config
 from app.store import db
 from app.worker import main as worker
+
+# 模型文件体积大，smoke 数据目录用软链复用仓库内已下载的模型
+_models_src = Path(__file__).resolve().parents[2] / "data" / "models"
+_models_dst = Path(os.environ["TENNIS_DATA_DIR"]) / "models"
+if _models_src.is_dir() and not _models_dst.exists():
+    _models_dst.parent.mkdir(parents=True, exist_ok=True)
+    _models_dst.symlink_to(_models_src, target_is_directory=True)
 
 FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "synthetic_wall_practice.mp4"
 

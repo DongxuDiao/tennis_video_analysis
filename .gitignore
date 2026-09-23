@@ -9,6 +9,8 @@ backend/.venv/
 backend/node_modules/
 backend/.playwright-cli/
 frontend/.playwright-cli/
+# skill 内容按 sha12 解压的运行时缓存（测试/首跑生成，只读复用）
+backend/app/skill_runtime/vendor/
 **/__pycache__/
 .pytest_cache/
 data/app.sqlite*

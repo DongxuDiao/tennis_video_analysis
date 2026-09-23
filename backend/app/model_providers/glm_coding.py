@@ -18,11 +18,14 @@ def eligibility_status():
 class GlmCodingAdapter(GlmApiAdapter):
     account_kind='coding_plan'
     protocol='anthropic'
+    retryable_codes=()  # 契约：无隐藏重试（额度重置类错误重试也无意义）
 
     def __init__(self,transport=None,base_url=BASE_URL):
         super().__init__(transport=transport,base_url=base_url)
 
-    def _chat(self,api_key,model,messages,max_tokens,timeout_s,json_mode=False):
+    # override 基类 _chat_once（而非 _chat）：单次请求的协议转换在这里，
+    # 退避重试等通用策略由基类 _chat 包装统一提供
+    def _chat_once(self,api_key,model,messages,max_tokens,timeout_s,json_mode=False):
         converted=[]
         for message in messages:
             blocks=message['content']
@@ -46,10 +49,11 @@ class GlmCodingAdapter(GlmApiAdapter):
             body['system']='Return only valid JSON matching the requested schema.'
             body['thinking']={'type':'disabled'}
         try:
-            with self._client() as client:
-                response=client.post(self._base+'/v1/messages',json=body,
-                    headers={'Authorization':'Bearer '+api_key,'anthropic-version':'2023-06-01'},
-                    timeout=httpx.Timeout(timeout_s,connect=10))
+            # 连接池由基类 _client() 持有并复用；这里不能 with-close 它
+            client=self._client()
+            response=client.post(self._base+'/v1/messages',json=body,
+                headers={'Authorization':'Bearer '+api_key,'anthropic-version':'2023-06-01'},
+                timeout=httpx.Timeout(timeout_s,connect=10))
         except httpx.TimeoutException:
             return ReviewResponse(ok=False,error_code='timeout_unknown',error_message='请求超时，结果未知')
         except httpx.HTTPError:

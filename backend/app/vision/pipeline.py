@@ -1,6 +1,8 @@
 """分析流水线：流式解码 → YOLO 球/拍检测 → MediaPipe 姿态 → 卡尔曼追踪 → 分块落盘。
 
-内存约束：逐帧处理，帧观测按块（默认 300 帧/块）写 JSONL，不整段驻留内存。
+内存约束：逐帧处理，帧观测按块（默认 300 帧/块）写 JSONL；落盘为崩溃恢复
+与 API 读取服务。事件阶段需要的观测同时保留在内存（原本写完盘再全量读回，
+内存峰值相同但多付一次 IO+解析）。
 """
 from __future__ import annotations
 
@@ -55,10 +57,12 @@ class FrameChunkWriter:
         self.buffer: list[dict] = []
         self.index: list[dict] = []
 
-    def add(self, rec: dict) -> None:
-        self.buffer.append(_sanitize(rec))
+    def add(self, rec: dict) -> dict:
+        rec = _sanitize(rec)
+        self.buffer.append(rec)
         if len(self.buffer) >= self.per_chunk:
             self.flush()
+        return rec
 
     def flush(self) -> None:
         if not self.buffer:
@@ -257,6 +261,11 @@ def execute_analysis(*, job: dict, run: dict, conn_factory=db.connect) -> dict:
     effective_device = None
     last_person_det_ms: int | None = None
 
+    # 帧观测（sanitize 后）随写盘同时留在内存：事件阶段直接消费，
+    # 免去刚写完的 JSONL 全量读回 + json.loads（多付一次全量 IO 与解析，
+    # 且记录含 rejected[].score_detail，体积可观）
+    mem_frames: list[dict] = []
+
     _cancel_state = {"counter": 0, "cancelled": False}
 
     def should_continue() -> bool:
@@ -436,18 +445,22 @@ def execute_analysis(*, job: dict, run: dict, conn_factory=db.connect) -> dict:
                 rec["pose"] = pose_rec
             rec["timings"] = {"detector_ms": (det.elapsed_ms if det else None),
                               "pose_ms": (pose_rec["elapsed_ms"] if pose_rec else None)}
-            writer.add(rec)
+            mem_frames.append(writer.add(rec))
             frames_counted += 1
             det_ms = (det.elapsed_ms if det else 0)
+            person_ms_used = (person_det.elapsed_ms if person_det is not None else 0)
             pose_ms_used = (pose_rec["elapsed_ms"] if pose_rec else 0)
-            perf["stage_ms"]["decode"] += (time.perf_counter() - t_img) * 1000 - det_ms - pose_ms_used
+            # 人物 stride pass 的时间已计入 detector_full；此处同样扣除，
+            # 否则残差会被重复算进 decode 桶，误导性能归因
+            perf["stage_ms"]["decode"] += (time.perf_counter() - t_img) * 1000 \
+                - det_ms - person_ms_used - pose_ms_used
 
         t_loop_end = time.perf_counter()
         with conn_factory() as conn:
             update_job_progress(conn, job["id"], stage="events", progress={"frames_done": frames_counted})
         writer.finalize()
         t_writer_done = time.perf_counter()
-        frames = load_frames_window(run_dir / "frames")
+        frames = mem_frames
         # 挥拍时间窗（P4）与事件
         from app.vision.actions import detect_swings
         swing_thr = float(ev_cfg.get("swing_wrist_speed_px_s", 600))

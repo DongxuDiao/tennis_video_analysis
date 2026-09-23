@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import base64
 import json
+import random
 import time
+
+import httpx
 
 from app.model_providers.base import Capabilities, ProbeResult, ReviewRequest, ReviewResponse
 from app.model_providers import errors as E
@@ -47,29 +50,53 @@ def _b64(b: bytes) -> str:
 class GlmApiAdapter:
     account_kind = "api"
     protocol = "openai_compatible"
+    # 独立计费路径可退避重试一次（errors.py 契约：429 非 1113 / 连接层失败）。
+    # Coding Plan 子类清空此元组：其契约是无隐藏重试（调用次数可见）。
+    retryable_codes = ("rate_limited", "network_error")
 
     def __init__(self, transport=None, base_url: str = BASE_URL):
         self._transport = transport
         self._base = base_url.rstrip("/")
+        self._http: httpx.Client | None = None
 
-    def _client(self):
-        import httpx
-        return httpx.Client(transport=self._transport, timeout=httpx.Timeout(
-            CONNECT_TIMEOUT_S, read=95.0, write=30.0, pool=CONNECT_TIMEOUT_S))
+    def _client(self) -> httpx.Client:
+        # 连接池复用：每次 _chat 新建 Client 会让每个请求都重付一次
+        # TCP+TLS 握手（批量复核任务可达几十次请求）。
+        if self._http is None or self._http.is_closed:
+            self._http = httpx.Client(transport=self._transport, timeout=httpx.Timeout(
+                CONNECT_TIMEOUT_S, read=95.0, write=30.0, pool=CONNECT_TIMEOUT_S))
+        return self._http
+
+    def close(self) -> None:
+        if self._http is not None and not self._http.is_closed:
+            self._http.close()
 
     # ---- 基础请求 ----
     def _chat(self, api_key: str, model: str, messages: list[dict],
               max_tokens: int, timeout_s: float, json_mode: bool = False) -> ReviewResponse:
+        resp = self._chat_once(api_key, model, messages, max_tokens, timeout_s, json_mode)
+        # timeout_unknown 不重发——请求可能已到达并计费。
+        if (not resp.ok and self.retryable_codes
+                and resp.error_code in self.retryable_codes):
+            time.sleep(1.5 + random.random() * 1.5)
+            resp = self._chat_once(api_key, model, messages, max_tokens, timeout_s, json_mode)
+            resp.diagnostics = {**(resp.diagnostics or {}), "retried": True}
+        return resp
+
+    def _chat_once(self, api_key: str, model: str, messages: list[dict],
+                   max_tokens: int, timeout_s: float, json_mode: bool = False) -> ReviewResponse:
         url = f"{self._base}/chat/completions"
         body: dict = {"model": model, "messages": messages, "max_tokens": max_tokens}
         if json_mode:
             body["response_format"] = {"type": "json_object"}
-        t0 = time.time()
         try:
-            with self._client() as c:
-                r = c.post(url, json=body,
-                           headers={"Authorization": f"Bearer {api_key}"},
-                           timeout=timeout_s)
+            c = self._client()
+            r = c.post(url, json=body,
+                       headers={"Authorization": f"Bearer {api_key}"},
+                       # 总超时 timeout_s，但连接建立仍受 10s 上限约束：
+                       # 直接传 timeout_s 会把 connect 也放宽到总超时，
+                       # 坏网络路径下阻塞整个 worker 线程
+                       timeout=httpx.Timeout(timeout_s, connect=CONNECT_TIMEOUT_S))
         except Exception as exc:  # 连接层错误
             name = type(exc).__name__
             if "ReadTimeout" in name or "timeout" in str(exc).lower():

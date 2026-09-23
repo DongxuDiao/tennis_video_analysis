@@ -66,38 +66,37 @@ def _angle_between(v1: tuple[float, float], v2: tuple[float, float]) -> float:
     return math.degrees(math.acos(c))
 
 
-_pose_frame_cache: dict[int, tuple[list[dict], list[int]]] = {}
+def _pose_series(frames: list[dict]) -> tuple[list[dict], list[int]]:
+    """含姿态的帧及其时间戳（升序）。
+
+    事件阶段会按时间邻近反复查姿态帧（每个球观测/挥拍候选一次），
+    预计算一次，避免逐候选重新全帧过滤。"""
+    pf = [f for f in frames if (f.get("pose") or {}).get("landmarks")]
+    return pf, [f["source_pts_ms"] for f in pf]
 
 
-def _nearest_pose_frame(frames: list[dict], t_ms: int, window_ms: int = 120) -> dict | None:
-    key = id(frames)
-    cached = _pose_frame_cache.get(key)
-    if cached is None or len(cached[0]) != len(frames):
-        pf = [f for f in frames if (f.get("pose") or {}).get("landmarks")]
-        cached = (pf, [f["source_pts_ms"] for f in pf])
-        _pose_frame_cache[key] = cached
-    pf, times = cached
-    if not pf:
+def _nearest_pose_frame(pose_frames: list[dict], pose_times: list[int], t_ms: int,
+                        window_ms: int = 120) -> dict | None:
+    if not pose_frames:
         return None
     import bisect
-    i = bisect.bisect_left(times, t_ms)
+    i = bisect.bisect_left(pose_times, t_ms)
     best, bd = None, None
     for j in (i - 1, i, i + 1):
-        if 0 <= j < len(pf):
-            d = abs(times[j] - t_ms)
+        if 0 <= j < len(pose_frames):
+            d = abs(pose_times[j] - t_ms)
             if d <= window_ms and (bd is None or d < bd):
-                best, bd = pf[j], d
+                best, bd = pose_frames[j], d
     return best
 
 
-def _wrist_speed_px_s(pose_frames: list[dict], t_ms: int, handedness: str,
-                      window_ms: int = 200) -> float | None:
-    """持拍腕在 t_ms 附近的最大速度（px/s），基于相邻姿态帧。"""
+def _wrist_series(frames: list[dict], handedness: str) -> list[tuple[int, tuple[float, float]]]:
+    """持拍腕 (time_ms, (x, y)) 序列（可见性 >= 0.5 的姿态帧）。"""
     lm_idx = LM["right_wrist"] if handedness == "right" else LM["left_wrist"] if handedness == "left" else None
     if lm_idx is None:
-        return None
+        return []
     pts = []
-    for f in pose_frames:
+    for f in frames:
         pose = f.get("pose")
         if not pose or not pose.get("landmarks"):
             continue
@@ -105,8 +104,17 @@ def _wrist_speed_px_s(pose_frames: list[dict], t_ms: int, handedness: str,
         if lm.get("visibility", 0) < 0.5:
             continue
         pts.append((f["source_pts_ms"], (lm["x"], lm["y"])))
+    return pts
+
+
+def _wrist_speed_px_s(wrist_pts: list[tuple[int, tuple[float, float]]], t_ms: int,
+                      window_ms: int = 200) -> float | None:
+    """持拍腕在 t_ms 附近的最大速度（px/s），基于相邻姿态帧（wrist_pts
+    为 _wrist_series 预提取的序列）。"""
+    if not wrist_pts:
+        return None
     best = 0.0
-    for (t0, p0), (t1, p1) in zip(pts, pts[1:]):
+    for (t0, p0), (t1, p1) in zip(wrist_pts, wrist_pts[1:]):
         if t0 <= t_ms + window_ms and t1 >= t_ms - window_ms and t1 > t0:
             v = math.hypot(p1[0] - p0[0], p1[1] - p0[1]) / ((t1 - t0) / 1000.0)
             if t_ms - window_ms <= (t0 + t1) / 2 <= t_ms + window_ms:
@@ -141,6 +149,10 @@ def extract_events(frames: list[dict], *, run_id: str, handedness: str = "unknow
 
     events: list[ExtractedEvent] = []
 
+    # 姿态/腕部序列：事件提取全程复用（见 _pose_series 注释）
+    pose_frames, pose_times = _pose_series(frames)
+    wrist_pts = _wrist_series(frames, handedness)
+
     # ---- 1. 球观测序列（按 track 分组，只用 raw 观测点）----
     track_obs: dict[int, list[dict]] = {}
     for f in frames:
@@ -171,7 +183,8 @@ def extract_events(frames: list[dict], *, run_id: str, handedness: str = "unknow
             d = _dist_to_box(p, (x1, y1, x2, y2))
             if best_d is None or d < best_d:
                 best_d, how = d, "racket_bbox"
-        wp = wrist_point(frame) or wrist_point(_nearest_pose_frame(frames, frame["source_pts_ms"]))
+        wp = wrist_point(frame) or wrist_point(
+            _nearest_pose_frame(pose_frames, pose_times, frame["source_pts_ms"]))
         if wp is not None:
             d = distance(p, wp)
             if best_d is None or d < best_d:
@@ -278,7 +291,7 @@ def extract_events(frames: list[dict], *, run_id: str, handedness: str = "unknow
                 frames, _seg_from_dict({"start_ms": t_i - 200, "end_ms": t_i + 200,
                                         "peak_ms": t_i, "peak_speed_px_s": None,
                                         "side": "unknown", "evidence": {}}), handedness)
-            w_speed = _wrist_speed_px_s(frames, t_i, handedness)
+            w_speed = _wrist_speed_px_s(wrist_pts, t_i)
             events.append(ExtractedEvent(
                 source_time_ms=t_i, frame_index=o["fi"], type="player_hit",
                 stroke_type=stroke, point=p_i,
@@ -303,7 +316,7 @@ def extract_events(frames: list[dict], *, run_id: str, handedness: str = "unknow
         t_mid = sw["peak_ms"]
         events.append(ExtractedEvent(
             source_time_ms=t_mid, frame_index=_frame_index_near(frames, t_mid),
-            type="swing_candidate", point=_wrist_point_at(frames, t_mid, handedness),
+            type="swing_candidate", point=_wrist_point_at(pose_frames, pose_times, t_mid, handedness),
             heuristic_score=min((sw.get("peak_speed_px_s") or 0) / 3000.0, 1.0),
             evidence={"swing_window_ms": [sw["start_ms"], sw["end_ms"]],
                       "peak_speed_px_s": sw.get("peak_speed_px_s"),
@@ -418,8 +431,9 @@ def _frame_index_near(frames: list[dict], t_ms: int) -> int:
     return best
 
 
-def _wrist_point_at(frames: list[dict], t_ms: int, handedness: str) -> tuple[float, float] | None:
-    fr = _nearest_pose_frame(frames, t_ms, 150)
+def _wrist_point_at(pose_frames: list[dict], pose_times: list[int], t_ms: int,
+                    handedness: str) -> tuple[float, float] | None:
+    fr = _nearest_pose_frame(pose_frames, pose_times, t_ms, 150)
     return wrist_point_global(fr, handedness)
 
 

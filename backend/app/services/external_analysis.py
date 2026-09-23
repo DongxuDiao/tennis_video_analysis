@@ -168,10 +168,15 @@ def execute(payload, job, conn, work):
     tracks={};people={};shots=[];reports=[];ledger=[]
     def write(name,obj):
         (work/name).write_text(json.dumps(obj,ensure_ascii=False,allow_nan=False))
+    # adapter/key 绑定整个任务：共享 HTTP 连接池（一批一换会让每个请求都
+    # 重付 TCP+TLS 握手）；连接 revision 变更时下一批重新绑定并停止。
+    adapter=None;key='';bound_rev=None
     for offset in range(0,len(indices),BATCH_SIZE):
         check(job);row=connection(spec)
-        adapter=service._adapter_for(row['provider'],row['account_kind'])
-        key=secret_store.default_store().load(row['secret_ref'])
+        if adapter is None or bound_rev!=row['config_revision']:
+            adapter=service._adapter_for(row['provider'],row['account_kind'])
+            key=secret_store.default_store().load(row['secret_ref'])
+            bound_rev=row['config_revision']
         frames=indices[offset:offset+BATCH_SIZE]
         with db.connect() as cc:
             db.update_job_progress(cc,job['id'],stage='external_analyzing',progress={'frames_done':offset,'frames_total_est':len(indices)})
@@ -190,7 +195,6 @@ def execute(payload, job, conn, work):
                     raise RuntimeError('外部模型请求失败，请检查连接后重试') from None
         finally:
             executor.shutdown(wait=False,cancel_futures=True)
-            key=''
         check(job)
         connection(spec)
         ledger.append({'frames':frames,'ok':response.ok,'error_code':response.error_code,'usage':response.usage,'diagnostics':response.diagnostics,'elapsed_s':round(time.monotonic()-started,2),'prompt_bytes':len(request.prompt.encode()),'image_bytes':sum(len(u) for u in request.images),'timeout_s':request.timeout_s})

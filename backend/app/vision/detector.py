@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
 
-from app.vision.geometry import Letterbox, Roi, bbox_center_xyxy
+from app.vision.geometry import Roi, bbox_center_xyxy
 
 
 @dataclass
@@ -50,6 +51,7 @@ def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, flo
     return inter / (aa + ab - inter) if (aa + ab - inter) > 0 else 0.0
 
 
+@lru_cache(maxsize=16)
 def plan_tiles(img_w: int, img_h: int, cols: int, rows: int,
                overlap: float) -> list[tuple[Roi, tuple[int, int]]]:
     """划分带重叠分块。返回 [(Roi, (row, col))]。
@@ -57,6 +59,9 @@ def plan_tiles(img_w: int, img_h: int, cols: int, rows: int,
     overlap 为相邻块重叠比例（相对块尺寸，0..0.5）。
     tile_w = img_w / (cols - (cols-1)*overlap)，步进 = tile_w*(1-overlap)；
     最后一块对齐到图像边缘，避免边缘覆盖缺口。
+
+    结果按 (w, h, cols, rows, overlap) 缓存：视频尺寸与分块参数固定时
+    每帧重算是纯浪费。返回的 Roi 视为只读，调用方不得原地修改。
     """
     overlap = max(0.0, min(0.5, overlap))
 
@@ -126,22 +131,26 @@ class Detector:
             self._resolved_device = "mps" if self._mps_available() else "cpu"
         return self._resolved_device
 
-    # ---- 底层：对单张（裁剪）图推理；结果坐标 = 裁剪图坐标 ----
-    def _infer_crop(self, crop: np.ndarray) -> tuple[list[Candidate], list[dict], float, str]:
+    # ---- 底层：对单张/多张（裁剪）图推理；结果坐标 = 裁剪图坐标 ----
+    def _run_predict(self, imgs):
+        """执行一次 predict（imgs 可为单图或图列表），含 MPS→CPU 回退。
+
+        返回 (results, attempts, 实际成功的设备)。"""
         self._ensure_loaded()
         attempts: list[dict] = []
         dev = self._resolve_device()
         devices = [dev] if dev == "cpu" or self.device_policy != "auto_mps_then_cpu" else [dev, "cpu"]
-        out, last_err = None, None
+        out, last_err, used = None, None, None
         for d in devices:
             t0 = time.perf_counter()
             try:
-                out = self._model.predict(crop, imgsz=self.imgsz, device=d,
+                out = self._model.predict(imgs, imgsz=self.imgsz, device=d,
                                           conf=min(self.conf_by_cls.values()),
                                           verbose=False, iou=0.5)
                 attempts.append({"device": d, "ok": True,
                                  "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2)})
                 self._resolved_device = d
+                used = d
                 break
             except Exception as e:  # MPS 失败回退 CPU，整次重跑（不拼接）
                 attempts.append({"device": d, "ok": False, "error": str(e)[:300],
@@ -149,21 +158,56 @@ class Detector:
                 last_err = e
         if out is None:
             raise RuntimeError(f"检测在所有设备上失败：{last_err}")
-        elapsed = sum(a["elapsed_ms"] for a in attempts)
+        return out, attempts, used
+
+    def _parse_result(self, r) -> list[Candidate]:
+        """单个 predict result → 候选列表。
+
+        张量一次性 .cpu().numpy() 后再迭代：逐框 .item()/.tolist() 每次
+        都触发一次主机-设备同步（MPS 上是热点循环里最贵的隐藏开销）。
+        """
         cands: list[Candidate] = []
-        boxes = out[0].boxes
-        if boxes is not None:
-            for i in range(len(boxes)):
-                cls_id = int(boxes.cls[i].item())
-                name = self._model.names.get(cls_id, str(cls_id))
-                conf = float(boxes.conf[i].item())
-                if conf < self.conf_by_cls.get(name, 1.0):
-                    continue
-                x1, y1, x2, y2 = boxes.xyxy[i].tolist()
-                cands.append(Candidate(cls_name=name, confidence=round(conf, 4),
-                                       bbox=(x1, y1, x2, y2),
-                                       center=bbox_center_xyxy((x1, y1, x2, y2))))
-        return cands, attempts, elapsed, (out and devices[0] or dev)
+        boxes = r.boxes
+        if boxes is None:
+            return cands
+        cls_arr = boxes.cls.cpu().numpy()
+        conf_arr = boxes.conf.cpu().numpy()
+        xyxy = boxes.xyxy.cpu().numpy()
+        names = self._model.names
+        for i in range(len(boxes)):
+            name = names.get(int(cls_arr[i]), str(cls_arr[i]))
+            conf = float(conf_arr[i])
+            if conf < self.conf_by_cls.get(name, 1.0):
+                continue
+            x1, y1, x2, y2 = xyxy[i].tolist()
+            cands.append(Candidate(cls_name=name, confidence=round(conf, 4),
+                                   bbox=(x1, y1, x2, y2),
+                                   center=bbox_center_xyxy((x1, y1, x2, y2))))
+        return cands
+
+    def _infer_crop(self, crop: np.ndarray) -> tuple[list[Candidate], list[dict], float, str]:
+        out, attempts, used = self._run_predict(crop)
+        elapsed = sum(a["elapsed_ms"] for a in attempts)
+        return self._parse_result(out[0]), attempts, elapsed, used
+
+    def _infer_crops(self, crops: list[np.ndarray]) -> list[tuple[list[Candidate], list[dict], float, str]]:
+        """多张裁剪图推理：合并为一次批量 predict。
+
+        分块检测的所有 tile 同尺寸，批量调用共享预处理与设备提交，
+        省掉逐块调用的固定开销。返回与输入一一对应的
+        (candidates, attempts, elapsed_ms, device)；attempts/elapsed 记在
+        首个条目上（同一次调用）。批量路径异常时退回逐张，语义不变。
+        """
+        if len(crops) <= 1:
+            return [self._infer_crop(crops[0])]
+        try:
+            out, attempts, used = self._run_predict(list(crops))
+        except Exception:
+            return [self._infer_crop(crop) for crop in crops]
+        elapsed = sum(a["elapsed_ms"] for a in attempts)
+        parsed = [self._parse_result(r) for r in out]
+        return ([(parsed[0], attempts, elapsed, used)]
+                + [(p, [], 0.0, used) for p in parsed[1:]])
 
     def detect(self, full_img: np.ndarray, roi: Roi | None = None,
                mode: str = "full_frame", imgsz: int | None = None) -> DetectionResult:
@@ -184,7 +228,6 @@ class Detector:
         result.attempts = attempts
         result.elapsed_ms = elapsed
         result.device = device
-        result.roi = roi
         for c in cands:
             bb = (c.bbox[0] + ox, c.bbox[1] + oy, c.bbox[2] + ox, c.bbox[3] + oy)
             result.candidates.append(Candidate(c.cls_name, c.confidence, bb,
@@ -193,15 +236,15 @@ class Detector:
 
     def detect_tiled(self, full_img: np.ndarray, *, cols: int = 3, rows: int = 2,
                      overlap: float = 0.25, merge_iou: float = 0.45) -> DetectionResult:
-        """分块全画面检测：每块独立缩放到 imgsz，回映后跨块合并重复候选。"""
+        """分块全画面检测：所有块合并为一次批量推理，回映后跨块合并重复候选。"""
         h, w = full_img.shape[:2]
         tiles = plan_tiles(w, h, cols, rows, overlap)
         result = DetectionResult(mode="tiled")
         result.tiles = [t for t, _ in tiles]
+        crops = [roi.crop(full_img) for roi, _ in tiles]
+        batch = self._infer_crops(crops)
         merged: list[Candidate] = []
-        for roi, (r, c) in tiles:
-            crop = roi.crop(full_img)
-            cands, attempts, elapsed, device = self._infer_crop(crop)
+        for (roi, (r, c)), (cands, attempts, elapsed, device) in zip(tiles, batch):
             result.attempts.extend(attempts)
             result.elapsed_ms += elapsed
             result.device = device

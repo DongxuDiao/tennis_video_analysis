@@ -1,0 +1,27 @@
+.DS_Store
+frontend/node_modules/
+frontend/dist/
+# tsc 副产物（vite.config.ts 的编译输出与增量缓存）
+frontend/vite.config.js
+frontend/vite.config.d.ts
+frontend/*.tsbuildinfo
+backend/.venv/
+backend/node_modules/
+backend/.playwright-cli/
+frontend/.playwright-cli/
+**/__pycache__/
+.pytest_cache/
+data/app.sqlite*
+data/projects/
+data/exports/
+data/models/*.pt
+data/models/*.task
+# 本地大模型权重（数 GB，走 data/manifest 或独立下载）
+data/local_models/
+# 实验工作区与产物视频，不属于源码
+work/
+outputs/
+reports/artifacts/
+
+# Docker credentials and deployment backups (never commit).
+.docker-state/

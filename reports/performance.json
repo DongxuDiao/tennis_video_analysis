@@ -1,0 +1,128 @@
+{
+  "measured_at": "2026-09-14",
+  "device": "MacBook Air M2 (2022), 16GB unified memory",
+  "os": "macOS 26.6",
+  "note": "全部为本机实测单次运行；机器同时运行常规桌面应用（负载非空载）。耗时为该次运行实测，不外推。峰值内存为分析进程 ru_maxrss（macOS 字节口径）。",
+  "versions": {
+    "python": "3.12.9 (uv venv)",
+    "torch": "2.14.0",
+    "ultralytics": "8.4.147",
+    "mediapipe": "0.10.35",
+    "opencv": "4.14.0",
+    "av": "13.1.0",
+    "detector_device_effective": "mps (auto_mps_then_cpu)",
+    "pose_device": "cpu (XNNPACK)"
+  },
+  "videos": {
+    "切片5.mov": {
+      "dims": "1920x1080",
+      "fps": 59.3,
+      "duration_s": 22.0,
+      "frames": 1320,
+      "codec": "hevc 10bit",
+      "rotation": 180
+    },
+    "切片2.mov": {
+      "dims": "1920x1080",
+      "fps": 59.4,
+      "duration_s": 48.7,
+      "frames": 2918,
+      "codec": "hevc 10bit",
+      "rotation": 180
+    }
+  },
+  "baseline_full_frame_960": {
+    "note": "改进前基线（整图 letterbox 960，无人物身份关联）",
+    "切片5": {
+      "wall_seconds": 96.1,
+      "ratio_x_realtime": 4.36,
+      "ball_coverage": 0.0409,
+      "player_hits": 2
+    },
+    "切片2": {
+      "ball_coverage": 0.0298,
+      "player_hits": 3
+    }
+  },
+  "tiled_local_3x2_960": {
+    "note": "分块发现(3x2 overlap .25) + 局部跟踪(960) + 人物步进采样；改进后默认",
+    "切片5": {
+      "wall_seconds": 145.6,
+      "ratio_x_realtime": 6.61,
+      "peak_rss_mb": 702.7,
+      "stage_ms": {
+        "detector_full_tiled_person": 15759,
+        "detector_local": 36966,
+        "pose": 12721,
+        "decode": 10131,
+        "io_events_and_overhead": 41996
+      },
+      "search_mode_counts": {
+        "tiled": 83,
+        "local": 1237
+      },
+      "ball_coverage": 0.7258,
+      "player_hits": 15,
+      "swing_segments": 2,
+      "person_target_coverage": 0.7348
+    },
+    "切片2": {
+      "wall_seconds": 159.3,
+      "ratio_x_realtime": 3.27,
+      "peak_rss_mb": 982.0,
+      "stage_ms": {
+        "detector_full_tiled_person": 37304,
+        "detector_local": 28625,
+        "pose": 17181,
+        "decode": 10386,
+        "io_events_and_overhead": 48561
+      },
+      "search_mode_counts": {
+        "tiled": 353,
+        "idle": 1398,
+        "local": 1167
+      },
+      "ball_coverage": 0.1717,
+      "player_hits": 16,
+      "swing_segments": 11,
+      "person_target_coverage": 0.9202
+    }
+  },
+  "resolution_probe_切片2_9.6s_to_13.7s": {
+    "note": "在 3x2 完全无候选的 4.1s 死区验证分辨率瓶颈",
+    "tiled_4x3_overlap_0.2": {
+      "wall_seconds": 124.0,
+      "ratio_x_realtime": 30.24,
+      "ball_coverage": 0.7805,
+      "search_mode_counts": {
+        "tiled": 246
+      }
+    },
+    "interpretation": "短段 78% 证明分辨率是主要瓶颈之一；全片上限受无球时段约束"
+  },
+  "tiled_local_4x3_960_切片2_full": {
+    "wall_seconds": 375.0,
+    "ratio_x_realtime": 7.7,
+    "peak_rss_mb": 907.6,
+    "search_mode_counts": {
+      "tiled": 245,
+      "idle": 517,
+      "local": 2156
+    },
+    "ball_coverage": 0.2053,
+    "player_hits": 17,
+    "person_target_coverage": 0.9202,
+    "note": "全片 20.5% 低于短段探针 78%：短段是飞行中的死区，全片含大量疑似无球时段（0-7.6s、43.6-48.7s 等）；真实球在场时间需人工真值才能确定"
+  },
+  "measurement_methods": {
+    "wall": "worker 进程 perf_counter 包裹分析主循环",
+    "stage_ms": "分项累计：检测(整图/分块/人物 pass)、局部检测、姿态、解码、事件+IO+逐帧开销",
+    "peak_memory": "resource.getrusage(RUSAGE_SELF).ru_maxrss（进程峰值，字节→MB）",
+    "cold_start_vs_warm": "not_measured（本轮全部为暖运行；模型常驻）"
+  },
+  "cancellation_and_recovery": {
+    "cancel_check": "每 15 帧查一次取消标记（约 250ms@60fps），确认取消远低于 2s 要求",
+    "interrupted_recovery": "worker 重启时失心跳任务标记 interrupted（代码路径存在，本轮未做破坏性实测）",
+    "note": "取消/崩溃恢复的系统压力测试 not_measured"
+  }
+}

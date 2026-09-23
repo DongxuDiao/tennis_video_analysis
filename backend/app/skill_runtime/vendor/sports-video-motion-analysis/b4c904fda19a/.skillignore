@@ -1,0 +1,26 @@
+# Skill runtime artifacts
+*.zip
+.idea/
+__pycache__/
+*/__pycache__/
+*.pyc
+.aime/.setup_status
+temp_data/
+*/temp_data/
+.DS_Store
+
+# Analysis working directories and outputs (never ship these)
+work/
+work*/
+chk/
+frames/
+*.mp4
+*.mov
+*.wav
+*.jpg
+*.pt
+bg_median.png
+court_lines.png
+calib_overlay.png
+calib_zoom.png
+*.log

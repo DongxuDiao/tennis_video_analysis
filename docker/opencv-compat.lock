@@ -1,0 +1,14 @@
+# Compatibility overlay for the frozen base environment.
+opencv-contrib-python==4.14.0.94 \
+    --hash=sha256:20f1fc01919fd2116d4fc19d9656c9137d735acdccd64207ba302a17289e5d01 \
+    --hash=sha256:5388c5915a759a543bd7979211c79045cd713de35d6baad5a6fdd2f4c3b359af \
+    --hash=sha256:626617c1e66b2537d075e00adba62bd7566df37f7878d185e047bfd49a6d50c7 \
+    --hash=sha256:6fc25b60cc0fcc6ce9c82d14cf45921b68b9ca15b9458a708bda7874cd486527 \
+    --hash=sha256:8171c172e412721d5e53347cfbd393bcfbd1441d88b8c0cea50cfde0a60cf8e8 \
+    --hash=sha256:9fb4deb9bcb93d41fb2a31c938f47b0d24a8e2b8418f566f939be309e3becb2f \
+    --hash=sha256:ac2e796be65ee8eee56f4f0a6514183f193264f4dc22f9e3a648a261e37f7ebe \
+    --hash=sha256:b36cd24d7e2bd5159bc9f6572c3ccfe333640ab28e123017f366ef286cae7514 \
+    --hash=sha256:f2e58020b9f54d68b49553a161327ae1bbc47da68e147231d444c915ee4cab4c
+    # via
+    #   -r docker/requirements.in
+    #   mediapipe

@@ -1,0 +1,49 @@
+{
+  "title": "网球动作 / 球路逐帧分析",
+  "phases": [
+    ["准备 / 迎球", "coil", -12, "coil", 0, [150, 150, 150]],
+    ["引拍 / 转体", "coil", 0, "contact", -3, [0, 200, 255]],
+    ["击球瞬间", "contact", -3, "contact", 2, [60, 60, 255]],
+    ["随挥 / 收拍", "contact", 2, "contact", 16, [90, 230, 120]]
+  ],
+  "idle_phase": "移动 / 还原",
+  "panel_fields": [
+    ["出球速度", "kmh", "%s km/h"],
+    ["速度区间", "_range", "%s"],
+    ["出球仰角", "elev", "%.1f°"],
+    ["过网余量", "net_clear", "%+.2f m"],
+    ["击球点高度", "contact_h", "%.2f m"],
+    ["来球速度", "feed_kmh", "%.0f km/h"]
+  ],
+  "tally": [
+    ["正手", "side", "FH"],
+    ["反手", "side", "BH"],
+    ["出界", "result", "OUT"],
+    ["下网", "result", "NET"],
+    ["界内", "result", "IN"]
+  ],
+  "legend": [
+    "青色=来球  黄色=出球  虚线=模型预测",
+    "×=落点推算（不同上旋）  红=出界 绿=界内"
+  ],
+  "side_names": {"FH": "正手", "BH": "反手", "SERVE": "发球"},
+  "result_names": {"IN": "界内", "OUT": "出界", "NET": "下网", "UNK": "未判定"},
+  "unmeasurable": "无法测量",
+
+  "waiting": "等待下一拍…",
+  "shot_fmt": "第 %s 拍 · %s%s",
+  "verdict_fmt": "判定：%s",
+  "stat_title": "累计统计",
+  "minimap_title": "俯视图",
+  "half_labels": {"near": "近端半场", "far": "远端半场"},
+  "landing_title": "落点判定",
+  "landing_fmt": "x=%+.1f m   y=%+.1f m",
+  "speed_stat": ["平均球速 %.0f km/h", "最快球速 %.0f km/h"],
+  "ball_source_note": "球路：接触点物理重建（非逐帧检测）",
+  "timeline_note": "刻度 = 每次击球      白线 = 当前帧",
+  "player_names": {"N": "近端球员", "F": "远端球员"},
+  "player_tally": [
+    ["正手", "side", "FH"],
+    ["反手", "side", "BH"]
+  ]
+}

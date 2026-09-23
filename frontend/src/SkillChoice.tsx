@@ -1,0 +1,7 @@
+import {useEffect,useState} from 'react'
+export function SkillChoice({value,onChange,token,disabled=false}:{value:string;onChange:(id:string)=>void;token:string;disabled?:boolean}){
+ const[name,setName]=useState('默认运动视频分析 Skill'),[busy,setBusy]=useState(false),[error,setError]=useState('')
+ useEffect(()=>{let live=true;fetch(`/api/model-connections/skills/${value}`).then(r=>r.json()).then(d=>{if(live&&d.name)setName(d.name)}).catch(()=>{});return()=>{live=false}},[value])
+ const upload=async(file?:File)=>{if(!file)return;setBusy(true);setError('');try{const body=new FormData();body.append('file',file);const r=await fetch('/api/model-connections/skills',{method:'POST',headers:{'X-Session-Token':token},body});const d=await r.json();if(!r.ok)throw Error(d.detail||'上传失败');setName(d.name);onChange(d.id)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+ return <div className="skill-choice"><b>分析 Skill</b><p>{value==='default'?'默认：运动视频动作分析':name}</p><label className="button skill-upload">{busy?'正在上传…':'上传自定义 Skill'}<input aria-label="上传自定义 Skill" type="file" accept=".md,.zip" disabled={disabled||busy} onChange={e=>{upload(e.target.files?.[0]);e.target.value=''}}/></label>{value!=='default'&&<button disabled={disabled||busy} onClick={()=>onChange('default')}>恢复默认</button>}<p className="conn-note">支持 .md / .zip（最大 2 MB）。采用文档规范，不执行包内脚本；仅用于外部分析。</p>{error&&<p role="alert" className="conn-err">{error}</p>}</div>
+}

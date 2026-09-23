@@ -1,0 +1,12 @@
+{
+  "sport": "tennis",
+  "manual": {
+    "near_baseline": [[215, 431], [955, 456]],
+    "near_service": [[400, 349], [690, 346]],
+    "left_sideline": [[210, 430], [440, 302]],
+    "right_sideline": [[955, 452], [665, 302]]
+  },
+  "player_height": [
+    {"frame": 235, "ankle": [308, 513], "nose": [347, 281], "height": 1.60}
+  ]
+}

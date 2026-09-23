@@ -1,0 +1,44 @@
+# V1 默认配置。全部为待测起点（任务书 §6.6），结果中同时保留 requested 与 effective。
+model:
+  detector: yolo11n
+  device: auto_mps_then_cpu   # auto_mps_then_cpu | mps | cpu
+  imgsz: 960
+  ball_confidence: 0.15
+  ball_min_size_px: 4         # 候选短边下限（分析图像 px），小于此值拒绝
+  ball_max_size_px: 160       # 候选长边上限
+  racket_confidence: 0.25
+  person_confidence: 0.35
+  pose: mediapipe_pose_full
+processing:
+  batch_size: 1
+  ball_stride: 1              # 每 N 帧做一次球检测（帧计数基于分析片段内帧序）
+  pose_interval_ms: 66        # 按真实时间间隔采样姿态
+  detection_mode: tiled_local # full_frame（整图基线）| tiled（分块整图）| tiled_local（分块发现+局部跟踪）
+  tiles: {cols: 3, rows: 2, overlap: 0.25}
+  full_search_interval_ms: 300  # 局部跟踪时的周期性全画面校验间隔
+  person_stride_ms: 300        # 局部模式下人物框的廉价全图采样间隔
+tracking:
+  max_prediction_gap_ms: 80   # 短缺口预测上限；超过则断轨
+  reacquire_interval_ms: 300
+  association_max_dist_px: 160  # 候选与预测点关联距离上限（分析图像 px）
+  ambiguous_dist_px: 40       # 多候选同时进入该半径视为 ambiguous
+  base_search_radius_px: 260  # 局部搜索基础半径
+  radius_per_lost_ms: 1.0     # 丢失后半径随时间增长
+events:
+  deduplicate_window_ms: 250
+  hit_near_racket_px: 220     # 球心到球拍框/持拍腕的“附近”判定半径
+  hit_direction_change_deg: 35
+  wall_contact_entry_px: 60   # 轨迹点进入墙面多边形该距离内视为接近
+  swing_wrist_speed_px_s: 600
+measurements:
+  physical_speed_enabled: false  # V1 恒为 false；km/h 保持不可用
+  speed_window_points: 4         # px/s 局部窗口（观测点数）
+limits:
+  max_upload_bytes: 2147483648   # 2GB
+  max_segment_seconds: 300
+  observation_window_max_frames: 1800  # observations 接口单次窗口上限
+server:
+  host: 127.0.0.1
+  port: 8765
+paths:
+  data_dir: data                # 相对仓库根；可用环境变量 TENNIS_DATA_DIR 覆盖

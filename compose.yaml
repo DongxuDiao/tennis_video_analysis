@@ -1,0 +1,40 @@
+name: tennis-lab
+services:
+  app:
+    image: tennis-lab:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    user: "${TENNIS_UID:?Use scripts/docker.sh}:${TENNIS_GID:?Use scripts/docker.sh}"
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      # Preserve legacy absolute paths in SQLite and analysis artifacts.
+      TENNIS_DATA_DIR: "${TENNIS_HOST_DATA_DIR:?Use scripts/docker.sh}"
+      TENNIS_SECRET_DIR: /run/tennis-secrets
+      TENNIS_SIMPLE_SUBPROCESS_WAIT: "1"
+      # SQLite WAL uses an mmap-backed -shm file. Docker Desktop bind mounts on
+      # macOS can invalidate that mapping and kill the worker with SIGBUS.
+      TENNIS_SQLITE_JOURNAL_MODE: "DELETE"
+    volumes:
+      - type: bind
+        source: "${TENNIS_HOST_DATA_DIR}"
+        target: "${TENNIS_HOST_DATA_DIR}"
+      - type: bind
+        source: "${TENNIS_HOST_SECRET_DIR:?Use scripts/docker.sh}"
+        target: /run/tennis-secrets
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 256
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'

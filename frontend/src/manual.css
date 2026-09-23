@@ -1,0 +1,87 @@
+.controls .manual {
+  margin-left: auto;
+  color: var(--lime);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.controls .manual svg { width: 13px; height: 13px; }
+
+/* ===== P1/P2/P3/P4 additions ===== */
+.media-slot{position:absolute;inset:0;display:grid;place-items:center}
+.media-slot video,.media-slot img{width:100%;height:100%;object-fit:contain}
+.overlay-wrap .media-slot img{position:absolute;inset:0}
+.form-card .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.person-pick{margin-top:16px;border-top:1px solid var(--line);padding-top:14px}
+.person-frame{position:relative;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+.person-frame img{width:100%;display:block}
+.person-frame button{position:absolute;border:2px dashed transparent;background:rgba(83,230,166,.08);border-radius:4px;cursor:pointer;color:transparent;display:grid;place-items:center;padding:0}
+.person-frame button.sel{border-color:var(--lime);color:var(--lime);background:rgba(83,230,166,.18)}
+.hint{color:var(--muted);font-size:11px;line-height:1.6;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ghost.wide{width:100%;margin-top:8px;justify-content:center}
+.notice.warn{color:#ffd88f;background:#2e2312;border-color:#584317}
+.tabs-row{display:flex;border-bottom:1px solid var(--line)}
+.tabs-row button{flex:1;border:0;background:none;color:var(--muted);padding:13px 4px;font-size:12px;cursor:pointer;border-bottom:2px solid transparent}
+.tabs-row button.active{color:#fff;border-color:var(--lime)}
+.tabs-row button.disabled{opacity:.35;pointer-events:none}
+aside{display:flex;flex-direction:column}
+aside>*{overflow:auto}
+/* 时间线：观测/预测分带 + 事件标记 */
+.tl-wrap{margin:10px 7px 4px;cursor:pointer}
+.tl-band{height:12px;background:#151d29;border:1px solid var(--line);border-radius:4px;position:relative;overflow:hidden}
+.tl-band span{position:absolute;top:0;bottom:0}
+.tl-band span.obs{background:#f8e45c}
+.tl-band span.pred{background:#8a5a20}
+.tl-track{height:18px;position:relative;margin-top:3px;background:#0d1420;border:1px solid var(--line);border-radius:4px}
+.tl-track.big{height:20px;margin:8px 7px}
+.tl-cursor{position:absolute;top:-3px;bottom:-3px;width:2px;background:#fff;box-shadow:0 0 6px #fff8}
+.tl-track .mark{position:absolute;top:2px;width:9px;height:9px;border-radius:50%;border:0;padding:0;transform:translateX(-50%);cursor:pointer}
+.mark.player_hit{background:#ff6079}.mark.wall_contact_candidate{background:#5aa9ff}.mark.swing_candidate{background:#c9a227}.mark.bounce_candidate{background:#7a8aa0}
+.mark.excluded{opacity:.35}.mark.gt{background:#d879ff;border-radius:2px}
+/* 证据区 */
+.evi dl{grid-template-columns:78px 1fr}
+.cand-list{display:flex;flex-direction:column;gap:4px;font:10px "DM Mono",monospace;max-height:260px;overflow:auto}
+.cand{background:#0c1420;border:1px solid #1e2a3c;border-radius:5px;padding:6px 8px;color:#9fb0c6}
+.cand.chosen{border-color:#5c6e3a;color:#e4f5b0}
+.cand.rejected{opacity:.75}
+/* 参数区 */
+.param-form{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.param-form label{display:flex;flex-direction:column;gap:5px;color:#aeb7c6;font-size:11px}
+.param-form select,.param-form input{background:#0c111a;color:#fff;border:1px solid var(--line);padding:8px;border-radius:6px}
+.param-form .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+/* 标注区 */
+.ann-actions{display:flex;gap:6px;margin:8px 0;align-items:center}
+.ann-actions button{background:#151d29;border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:11px;display:flex;gap:4px;align-items:center;cursor:pointer}
+.ann-actions select{background:#0c111a;color:#fff;border:1px solid var(--line);padding:7px;border-radius:6px}
+.ann-list{display:flex;flex-direction:column;gap:3px;margin:10px 0;font-size:11px;color:var(--muted)}
+.ann-list>div:first-child,.ann-list>div:nth-child(10){color:#cfe2ff;font-weight:600}
+.ann-list button{border:0;background:none;color:var(--muted);text-align:left;padding:3px 0;cursor:pointer;font:10px "DM Mono"}
+.ann-list button:hover{color:#fff}
+.ann .two{display:grid;grid-template-columns:1fr auto;gap:6px;margin-top:10px}
+.ann .two input{background:#0c111a;color:#fff;border:1px solid var(--line);padding:8px;border-radius:6px}
+.gt-existing{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.gt-existing>div{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px}
+.gt-existing span{flex:1;color:#cfe2ff}
+.gt-existing button{border:1px solid #3a5070;background:#16233a;color:#bcd6ff;border-radius:6px;padding:5px 9px;font-size:11px;cursor:pointer}
+/* 结果区 */
+.results dl{grid-template-columns:96px 1fr}
+.eval-card{border:1px solid var(--line);border-radius:9px;padding:12px;margin-top:10px;background:#0d1420}
+.eval-card>b{font-size:12px}
+.eval-grid{display:grid;grid-template-columns:64px 1fr;gap:3px 8px;margin-top:8px;font-size:11px}
+.eval-grid span{color:var(--muted)}
+.fp-list{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+.fp-list button{border:1px solid #6b3040;background:#2a1520;color:#ffa9b6;border-radius:5px;padding:4px 8px;font:10px "DM Mono";cursor:pointer}
+.fp-list.fn button{border-color:#3c4a6b;background:#141f36;color:#a9c4ff}
+/* 对比页 */
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.pane-label{font:11px "DM Mono";color:var(--blue);margin-bottom:8px}
+.compare-diff{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:16px;margin-top:16px}
+.diff-cell{display:flex;justify-content:space-between;padding:7px 10px;border-bottom:1px solid #1a2434;font-size:12px}
+.diff-cell span{color:var(--muted)}
+.ev-diff{display:flex;flex-direction:column;gap:6px;font-size:11px}
+.ev-diff>div>b{display:block;margin-bottom:4px}
+.ev-diff button{border:1px solid var(--line);background:#111722;border-radius:5px;padding:3px 8px;margin:0 4px 4px 0;color:#b8c1d0;cursor:pointer;font:10px "DM Mono"}
+.compare-picker{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.compare-picker>div{display:flex;flex-direction:column;gap:6px}
+.compare-picker button{border:1px solid var(--line);background:#111722;border-radius:8px;padding:9px 12px;text-align:left;color:#b8c1d0;cursor:pointer;font:11px "DM Mono"}
+.compare-picker button.on{border-color:var(--lime);color:#e9ffb0}

@@ -1,0 +1,37 @@
+{
+  "models": [
+    {
+      "key": "yolo11n",
+      "filename": "yolo11n.pt",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt",
+      "sha256": "0ebbc80d4a7680d14987a577cd21342b65ecfd94632bd9a8da63ae6417644ee1",
+      "size_bytes": 5613764,
+      "role": "detector",
+      "source": "Ultralytics official YOLO11n COCO weights",
+      "license": "Ultralytics YOLO11 weights: AGPL-3.0 (non-commercial use permitted under AGPL terms; commercial licensing requires Ultralytics agreement). Recorded here for provenance; redistribution terms must be reviewed before any commercial distribution.",
+      "license_url": "https://www.ultralytics.com/license"
+    },
+    {
+      "key": "pose_landmarker_full",
+      "filename": "pose_landmarker_full.task",
+      "url": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task",
+      "sha256": "4eaa5eb7a98365221087693fcc286334cf0858e2eb6e15b506aa4a7ecdcec4ad",
+      "size_bytes": 9398198,
+      "role": "pose",
+      "source": "Google MediaPipe Pose Landmarker Full (float16)",
+      "license": "Apache-2.0 (MediaPipe models by Google)",
+      "license_url": "https://developers.google.com/mediapipe"
+    },
+    {
+      "key": "yolo11m_pose",
+      "filename": "yolo11m-pose.pt",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11m-pose.pt",
+      "sha256": "29b17eaf3a3117cbea906090dbedf9159f7c6a49db58ec8b99ed2dfde1cf6eb2",
+      "size_bytes": 42459307,
+      "role": "pose",
+      "source": "Ultralytics official YOLO11m pose weights",
+      "license": "AGPL-3.0; see upstream license",
+      "license_url": "https://www.ultralytics.com/license"
+    }
+  ]
+}

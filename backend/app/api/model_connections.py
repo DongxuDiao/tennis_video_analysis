@@ -10,6 +10,7 @@ from __future__ import annotations
 import secrets
 
 from fastapi import APIRouter, Header, HTTPException, Request, UploadFile, File
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.model_connections import service as svc
@@ -25,7 +26,6 @@ _ALLOWED_HOSTS = {"127.0.0.1:8765", "localhost:8765", "127.0.0.1:8766", "localho
 def check_origin(request: Request) -> "JSONResponse | None":
     """中间件用：loopback Host + 同源 Origin（在任何 body 解析之前执行）。
     中间件中不能抛 HTTPException（会变 500），直接返回 403 响应。"""
-    from fastapi.responses import JSONResponse
     host = (request.headers.get("host") or "").lower()
     if host not in _ALLOWED_HOSTS:
         return JSONResponse({"detail": "仅限本机访问"}, status_code=403)
@@ -62,11 +62,14 @@ def list_all(request: Request):
         coding_plan_doc = catalog.require("glm", "coding_plan")[1].docs_url
     except ValueError:
         pass
-    return {"connections": svc.list_connections(), "session_token": _session_token,
-            "consent_version": svc.CONSENT_VERSION,
-            "providers": catalog.catalog_payload(),
-            # 兼容字段（前端切换 providers 后移除）
-            "coding_plan_doc": coding_plan_doc}
+    # no-store：providers 目录随版本演进，绝不允许浏览器拿旧缓存渲染
+    return JSONResponse(
+        {"connections": svc.list_connections(), "session_token": _session_token,
+         "consent_version": svc.CONSENT_VERSION,
+         "providers": catalog.catalog_payload(),
+         # 兼容字段（前端切换 providers 后移除）
+         "coding_plan_doc": coding_plan_doc},
+        headers={"Cache-Control": "no-store"})
 
 
 class ProbeIn(BaseModel):

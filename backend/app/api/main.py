@@ -953,10 +953,14 @@ if _dist.exists():
 
     @app.get("/")
     def index():
-        return FileResponse(_dist / "index.html")
+        # index.html 不带内容哈希：必须每次回源校验，否则发版后浏览器
+        # 启发式缓存会把旧页面+旧 bundle 一起续用（assets 有哈希可长缓存）
+        return FileResponse(_dist / "index.html",
+                            headers={"Cache-Control": "no-cache"})
 
     @app.get("/{full_path:path}")
     def spa_fallback(full_path: str):
         if full_path.startswith("api/"):
             raise HTTPException(404, f"未知 API 路径 /{full_path}")
-        return FileResponse(_dist / "index.html")
+        return FileResponse(_dist / "index.html",
+                            headers={"Cache-Control": "no-cache"})

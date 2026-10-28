@@ -1,6 +1,6 @@
 # Tennis Lab：本地网球训练视频分析
 
-面向苹果生态的本地工具。导入 MP4/MOV 后，使用 YOLO11n 与 MediaPipe Pose 分析目标人物、球轨迹和事件候选；网页工作台支持逐帧检查、图层开关、参数调优 A/B、独立人工标注与评估、人工复核及 MP4/CSV/JSON 导出。全部推理在本机离线完成。
+面向苹果生态的本地工具。导入 MP4/MOV 后，使用 YOLO11n 与 MediaPipe Pose 分析目标人物、球轨迹和事件候选；网页工作台支持逐帧检查、图层开关、参数调优 A/B、独立人工标注与评估、人工复核及 MP4/CSV/JSON 导出。默认全部推理在本机离线完成；可选接入主流大模型做增强复核或外部模型分析（见「模型连接」）。
 
 ## 已实现
 
@@ -59,16 +59,18 @@ cd ../frontend && npm run build                  # TypeScript 严格检查 + 构
 3. 两个 run 在“对比”页同步查看差异，再决定是否全片分析。
 4. 需要指标时进入“独立标注”完成真值集（每 ~100ms 一点、事件附近加密），再评估。
 
-## 模型连接（可选增强复核）
+## 模型连接（可选：增强复核 / 外部模型分析）
 
 主页右上角“模型连接”是唯一设置入口。默认未启用：所有分析完全本地。
 
-- **GLM 普通 API（独立计费）**：粘贴 Key → “测试并保存”（发送一张合成图，可能消耗少量额度）→ 启用增强复核。Key 存 macOS Keychain，数据库/日志/前端不保存。
-- **GLM Coding Plan（套餐）**：资格待确认，界面不可启用（附官方文档链接）；确认前不向套餐端点发送任何请求。
-- 启用后，新分析任务会在本地分析完成后，把**异常窗口的关键帧**（疑似换人/归属冲突/触球附近断轨等，≤6 窗 × ≤8 帧 × ≤12 次请求）发送给智谱复核；模型提议必须通过本地证据验证才生效，全部审计落盘（`enhancement_summary.json`）。原视频不整段上传；关闭后新任务只用本地。
-- 结果页显示来源（“本地分析 · GLM 复核 N 段”）；任何云端失败都保留本地结果。
+- **多厂商接入**：GLM、OpenAI、Claude、Gemini、DeepSeek、Kimi、Qwen、豆包 8 家，端点与模型来自内置目录（`backend/app/model_providers/catalog.py`）；GLM 分“普通 API / Coding Plan”两种接入类型，其余为 API。支持可选“模型覆盖”（如豆包 `ep-…` 接入点 ID）；V1 不支持自定义 URL。
+- **启用门槛（视觉必须达标）**：每个连接都要通过双重探测——文本问答 + 合成图答色；答错颜色即判定视觉不可用，不允许启用（DeepSeek 暂无公开视觉 API，会如实提示不能用于视频帧分析）。
+- 粘贴 Key → “测试并保存”（发送一张合成图，可能消耗少量额度）→ 启用。Key 只存 macOS Keychain，数据库/日志/前端均不保存；探测成功后冻结所用模型，后台不静默更换计费产品；厂商/接入类型之间不互相降级。
+- **增强复核**：启用后，新分析任务在本地分析完成后，把**异常窗口的关键帧**（疑似换人/归属冲突/触球附近断轨等，≤6 窗 × ≤8 帧 × ≤12 次请求）发送给所选厂商复核；模型提议必须通过本地证据验证才生效，全部审计落盘（`enhancement_summary.json`）。原视频不整段上传；关闭后新任务只用本地。
+- **仅外部模型分析**：分析方式选“仅外部模型”时，按所选 Skill 抽帧发送给该连接分析；结果页明确标注模型估计未经本地检测验证。
+- 结果页显示来源（“本地分析 · 厂商 复核 N 段”）；任何云端失败都保留本地结果。
 
-技术设计见 `docs/GLM接入验证记录.md`；实现位于 `backend/app/{model_connections,model_providers,skill_runtime,enhancement}/`。skill 快照（`user_skills.zip`，SHA256 钉住）安全解压到 `backend/app/skill_runtime/vendor/`，只作为数据消费、从不执行。
+技术设计见 `docs/GLM接入验证记录.md`（GLM 原始接入）与 `docs/本地Skill引擎_P0验证记录.md`；实现位于 `backend/app/{model_connections,model_providers,skill_runtime,enhancement}/`。skill 快照（`user_skills.zip`，SHA256 钉住）安全解压到 `backend/app/skill_runtime/vendor/`，只作为数据消费、从不执行。
 
 ## 当前限制（摘）
 
@@ -86,4 +88,4 @@ cd ../frontend && npm run build                  # TypeScript 严格检查 + 构
 ./scripts/docker.sh ps
 ```
 
-访问 http://127.0.0.1:8765 。数据保留在当前 `data/`。不要与原生服务同时使用同一数据库。Apple Silicon 上当前镜像为 ARM64 CPU 模式；默认 YOLO + TrackNet 自动分析可用，但容器不包含没有 Linux ARM64 wheel 的 MediaPipe，且速度显著慢于原生 MPS。GLM Keychain 凭据需在容器页面重新配置。详见 [Docker 部署说明](docs/Docker部署.md)。
+访问 http://127.0.0.1:8765 。数据保留在当前 `data/`。不要与原生服务同时使用同一数据库。Apple Silicon 上当前镜像为 ARM64 CPU 模式；默认 YOLO + TrackNet 自动分析可用，但容器不包含没有 Linux ARM64 wheel 的 MediaPipe，且速度显著慢于原生 MPS。模型连接凭据需在容器页面重新配置。详见 [Docker 部署说明](docs/Docker部署.md)。

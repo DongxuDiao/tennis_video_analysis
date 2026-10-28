@@ -129,3 +129,65 @@ def test_plan_limit_probe_shows_reset_without_retry_promise(monkeypatch, store):
     assert '2026-09-18 10:00:47' in out['error']
     assert '自动重试' not in out['error']
     assert 'probe_id' not in out
+
+
+def test_non_glm_provider_probe_create_flow(store):
+    """目录驱动：openai 连接走同一 probe→create 底座，display_name 无 GLM 字样。"""
+    out = svc.probe("openai", "api", "sk-openai-123456")
+    assert out["ok"] and out["capabilities"]["vision_ok"]
+    created = svc.create_from_probe(out["probe_id"], enable=True, store=store)
+    c = svc.list_connections()[0]
+    assert c["provider"] == "openai" and c["enabled"] is True
+    assert c["display_name"].startswith("OpenAI") and "GLM" not in c["display_name"]
+
+
+def test_probe_model_override_freezes_into_db(monkeypatch, store):
+    """服务层把 model 覆盖 pin 到适配器（属性注入），并把探测冻结值写库。"""
+    class PinnedSpy:
+        model = "dir-default"
+        account_kind = "api"
+        protocol = "openai_compatible"
+        def probe(self, key):
+            from app.model_providers.base import Capabilities, ProbeResult
+            return ProbeResult(True, Capabilities(protocol=self.protocol,
+                                                  text_ok=True, vision_ok=True,
+                                                  model_id=self.model))
+    monkeypatch.setattr(svc, "_adapter_for", lambda p, k: PinnedSpy())
+    out = svc.probe("doubao", "api", "ark-key-12345678", store=store, model="ep-20250901")
+    assert out["ok"] and out["capabilities"]["model_id"] == "ep-20250901"
+    svc.create_from_probe(out["probe_id"], enable=True, store=store)
+    c = svc.list_connections()[0]
+    assert c["model_id"] == "ep-20250901"
+
+
+def test_unknown_provider_rejected_with_value_error():
+    with pytest.raises(ValueError):
+        svc.probe("not-a-vendor", "api", "sk-test-12345678")
+    with pytest.raises(ValueError):
+        svc.probe("openai", "coding_plan", "sk-test-12345678")   # openai 无套餐类型
+
+
+def test_reverify_keeps_frozen_model(monkeypatch, store):
+    """复验必须用 DB 冻结模型，不得回退目录首选候选。"""
+    seen = {}
+    class ProbeSpy:
+        model = "dir-default"
+        account_kind = "api"
+        protocol = "openai_compatible"
+        def probe(self, key):
+            seen["model"] = self.model
+            from app.model_providers.base import Capabilities, ProbeResult
+            caps = Capabilities(protocol=self.protocol, text_ok=True, vision_ok=True,
+                                model_id=self.model)
+            return ProbeResult(True, caps)
+    monkeypatch.setattr(svc, "_adapter_for", lambda p, k: ProbeSpy())
+    out = svc.probe("openai", "api", "sk-openai-123456", store=store)
+    conn_id = svc.create_from_probe(out["probe_id"], enable=False, store=store)["id"]
+    with db.connect() as conn:
+        conn.execute("UPDATE model_connections SET model_id='m-frozen' WHERE id=?", (conn_id,))
+    import time as _t
+    with db.connect() as conn:
+        rev = conn.execute("SELECT config_revision FROM model_connections WHERE id=?",
+                           (conn_id,)).fetchone()["config_revision"]
+    patched = svc.patch(conn_id, expected_revision=rev, reverify=True, store=store)
+    assert patched["reverify_ok"] is True and seen["model"] == "m-frozen"

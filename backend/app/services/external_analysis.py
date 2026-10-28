@@ -175,6 +175,7 @@ def execute(payload, job, conn, work):
         check(job);row=connection(spec)
         if adapter is None or bound_rev!=row['config_revision']:
             adapter=service._adapter_for(row['provider'],row['account_kind'])
+            adapter.model=row['model_id'] or adapter.model   # 冻结模型：任务内不换候选
             key=secret_store.default_store().load(row['secret_ref'])
             bound_rev=row['config_revision']
         frames=indices[offset:offset+BATCH_SIZE]

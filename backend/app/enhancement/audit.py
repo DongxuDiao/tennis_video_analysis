@@ -25,11 +25,11 @@ from app.enhancement.validator import validate_decision
 
 
 def _adapter_for_connection(conn_row):
-    if conn_row["account_kind"] == "api":
-        from app.model_providers.glm_api import GlmApiAdapter
-        return GlmApiAdapter()
-    from app.model_providers.glm_coding import GlmCodingAdapter
-    return GlmCodingAdapter()
+    # 统一走 model_connections 的目录工厂（修复：旧行为只看 account_kind，
+    # 非 GLM 厂商在增强复核路径会被错误映射成 GLM 适配器）
+    adapter = conn_svc._adapter_for(conn_row["provider"], conn_row["account_kind"])
+    adapter.model = conn_row["model_id"] or adapter.model   # 冻结模型
+    return adapter
 
 
 def enhance(work: Path, *, project_id: str, job_id: str,
@@ -180,8 +180,13 @@ def enhance(work: Path, *, project_id: str, job_id: str,
     summary["budget"] = {"max_vision_calls": budget.max_vision_calls,
                          "used": ledger.used_calls}
     n_windows = len([r for r in summary["rounds"] if r.get("status") == "succeeded"])
-    summary["source_line"] = (f"本地分析 · GLM 复核 {n_windows} 段"
-                              if n_windows else "本地分析")
+    if n_windows:
+        from app.model_providers import catalog
+        provider_label = catalog.label_of(summary["provider"]["id"]) \
+            if summary.get("provider") else "外部模型"
+        summary["source_line"] = f"本地分析 · {provider_label} 复核 {n_windows} 段"
+    else:
+        summary["source_line"] = "本地分析"
     if summary["status"] in ("failed", "partial") and any(
             r.get("error_code") for r in summary["rounds"]):
         summary["source_line"] += "（增强服务部分不可用，已保留本地结果）"

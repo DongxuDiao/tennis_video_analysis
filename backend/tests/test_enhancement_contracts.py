@@ -181,7 +181,8 @@ def test_enhance_e2e_offline_with_fake_provider(fake_work):
     assert summary["status"] == "succeeded"
     assert summary["requests"] >= 1
     assert summary["accepted"] >= 1          # contact 有音频峰支持 → accepted
-    assert "GLM 复核" in summary["source_line"]
+    # 多厂商后按连接厂商显示（无连接注入时为中性"外部模型"），段数如实统计
+    assert summary["source_line"].startswith("本地分析 · ") and "复核 3 段" in summary["source_line"]
     # 证据与审计产物落盘
     assert (fake_work / "enhancement_summary.json").is_file()
     assert (fake_work / "enhancement" / "requests.jsonl").is_file()

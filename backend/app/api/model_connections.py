@@ -56,15 +56,26 @@ def list_all(request: Request):
     host = (request.headers.get("host") or "").lower()
     if host not in _ALLOWED_HOSTS:
         raise HTTPException(403, "仅限本机访问")
+    from app.model_providers import catalog
+    coding_plan_doc = ""
+    try:
+        coding_plan_doc = catalog.require("glm", "coding_plan")[1].docs_url
+    except ValueError:
+        pass
     return {"connections": svc.list_connections(), "session_token": _session_token,
             "consent_version": svc.CONSENT_VERSION,
-            "coding_plan_doc": "https://docs.bigmodel.cn/cn/coding-plan/quick-start"}
+            "providers": catalog.catalog_payload(),
+            # 兼容字段（前端切换 providers 后移除）
+            "coding_plan_doc": coding_plan_doc}
 
 
 class ProbeIn(BaseModel):
     provider: str = "glm"
-    account_kind: str = Field(pattern="^(api|coding_plan)$")
+    account_kind: str = "api"
     api_key: str = Field(min_length=8, max_length=512)
+    # 可选模型覆盖（如火山方舟 ep-… 接入点 ID）；合法字符白名单防注入
+    model: str | None = Field(default=None, max_length=128,
+                              pattern=r"^[\w.\-:]{1,128}$")
 
 
 @router.post("/probe")
@@ -72,7 +83,7 @@ def probe(body: ProbeIn, request: Request,
           x_session_token: str | None = Header(default=None)):
     _guard(request, x_session_token)
     try:
-        out = svc.probe(body.provider, body.account_kind, body.api_key)
+        out = svc.probe(body.provider, body.account_kind, body.api_key, model=body.model)
     except ValueError as e:
         raise HTTPException(422, str(e))
     except ss.SecretStoreError as e:

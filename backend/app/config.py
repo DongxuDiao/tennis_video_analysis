@@ -16,6 +16,8 @@ PREPROCESS_VERSION = "v1"
 # 代码版本：对关键算法文件内容取哈希，保证可追溯且随代码变化
 _CODE_FILES = [
     "model_providers/glm_coding.py", "model_providers/base.py",
+    "model_providers/openai_compat.py", "model_providers/anthropic_messages.py",
+    "model_providers/catalog.py",
     "skill_runtime/default_external_instructions.md",
     "services/external_analysis.py", "services/analysis_mode.py", "model_connections/skills.py",
     "vision/tracknet.py", "vision/detector.py", "vision/pose.py", "vision/tracker.py",

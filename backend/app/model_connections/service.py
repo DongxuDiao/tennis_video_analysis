@@ -1,7 +1,8 @@
 """模型连接服务：探测 → 启用 → 轮换/启停 → 删除。
 
 - probe 产生的 probe_id 60 秒有效，启用时二次校验，避免“探测成功但保存错 Key”。
-- Coding Plan 以实际能力探测为准，不使用资格环境变量拦截。
+- 厂商/接入类型由 model_providers/catalog.py 目录驱动（多厂商）。
+- 以实际能力探测为准，不使用资格环境变量拦截。
 - config_revision 乐观锁；删除连接清理凭据。
 - 凭据只经 SecretStore；本模块任何返回值不含 Key。
 """
@@ -10,51 +11,47 @@ from __future__ import annotations
 import secrets
 import time
 
+from app.model_providers import catalog
 from app.model_providers.base import ProbeResult
 from app.model_providers.errors import USER_MESSAGES
 from app.model_connections import secret_store as ss
 
-CONSENT_VERSION = "v1-glm-2026-09-16"
+CONSENT_VERSION = "v1-providers-2026-10-28"
 PROBE_TTL_S = 60.0
-PROVIDERS = ("glm",)
-ACCOUNT_KINDS = ("api", "coding_plan")
 
 # 进程内短期探测凭据（不落盘）；probe_id → {key_mask, capabilities, expires_at, kind}
 _pending_probes: dict[str, dict] = {}
 
 
 def _adapter_for(provider: str, account_kind: str):
-    if provider != "glm":
-        raise ValueError("V1 仅支持 GLM")
-    if account_kind == "api":
-        from app.model_providers.glm_api import GlmApiAdapter
-        return GlmApiAdapter()
-    if account_kind == "coding_plan":
-        from app.model_providers.glm_coding import GlmCodingAdapter
-        return GlmCodingAdapter()
-    raise ValueError("未知接入类型")
+    """统一 provider 工厂（目录驱动）。
+
+    保持两位置参数签名：本函数是测试注入 FakeProvider 的猴补接缝；
+    需要 DB 冻结模型时由调用方做属性注入（adapter.model = row["model_id"]）。
+    """
+    return catalog.adapter_for(provider, account_kind)
 
 
 def _eligibility_for(account_kind: str) -> str:
-    if account_kind == "coding_plan":
-        from app.model_providers.glm_coding import eligibility_status
-        return eligibility_status()
-    return "confirmed"   # 普通 API 无套餐资格问题；用户自担计费并显式启用
+    # 机制已退役：能力探测决定激活；字段仅为 DB 兼容保留
+    return "confirmed"
 
 
-def probe(provider: str, account_kind: str, api_key: str, store=None) -> dict:
+def probe(provider: str, account_kind: str, api_key: str, store=None,
+          model: str | None = None) -> dict:
     """执行探测（合成图）。返回 {probe_id, ok, capabilities, error}。
 
-    注意：探测可能消耗少量服务额度；Coding Plan 通过 Anthropic 端点测试。
+    注意：探测可能消耗少量服务额度；model 为可选覆盖（覆盖即唯一候选）。
     """
-    if provider not in PROVIDERS or account_kind not in ACCOUNT_KINDS:
-        raise ValueError("provider/account_kind 不受支持")
+    catalog.require(provider, account_kind)   # 未知厂商/接入类型 → ValueError
     if not api_key or len(api_key) > 512:
         return {"ok": False, "error_code": "invalid_key",
                 "error": "Key 为空或过长"}
     store = store or ss.default_store()
     eligibility = _eligibility_for(account_kind)
     adapter = _adapter_for(provider, account_kind)
+    if model:
+        adapter.model = model   # 属性注入（FakeProvider 猴补场景下被忽略）
     result: ProbeResult = adapter.probe(api_key)
     # 探测语境的用户文案（区别于任务中失败时的"已保留本地结果"措辞）
     probe_messages = {"quota_exhausted": "服务额度不足，请充值后重试",
@@ -73,6 +70,7 @@ def probe(provider: str, account_kind: str, api_key: str, store=None) -> dict:
         _pending_probes[probe_id] = {
             "key": api_key, "expires_at": time.time() + PROBE_TTL_S,
             "provider": provider, "account_kind": account_kind,
+            "model": model or "",
             "capabilities": payload["capabilities"],
         }
         payload["probe_id"] = probe_id
@@ -113,8 +111,9 @@ def create_from_probe(probe_id: str, *, enable: bool, skill_id: str = "default",
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (conn_id, entry["provider"], entry["account_kind"],
              entry["capabilities"]["protocol"],
-             f"GLM {'普通API' if entry['account_kind']=='api' else 'Coding Plan'} · {ss.mask_key(entry['key'])}",
-             entry["capabilities"].get("model_id") or "", secret_ref,
+             catalog.display_name(entry["provider"], entry["account_kind"],
+                                  ss.mask_key(entry["key"])),
+             entry["capabilities"].get("model_id") or entry.get("model") or "", secret_ref,
              db.j(entry["capabilities"]), _eligibility_for(entry["account_kind"]),
              1 if enable else 0, CONSENT_VERSION, now, 1, now, now))
     _pending_probes.pop(probe_id, None)
@@ -189,6 +188,7 @@ def patch(conn_id: str, *, expected_revision: int, enabled: bool | None = None,
         if reverify:
             key = store.load(row["secret_ref"])
             adapter = _adapter_for(row["provider"], row["account_kind"])
+            adapter.model = row["model_id"] or adapter.model   # 冻结模型：复验不换候选
             result = adapter.probe(key)
             caps = _caps_dict(result.capabilities)
             caps["skill_id"] = skill_id or (db.uj(row["capabilities_json"]) or {}).get("skill_id", "default")
@@ -223,6 +223,7 @@ def rotate(conn_id: str, api_key: str, *, expected_revision: int, store=None) ->
         if row["config_revision"] != expected_revision:
             return {"conflict": True, "current_revision": row["config_revision"]}
         adapter = _adapter_for(row["provider"], row["account_kind"])
+        adapter.model = row["model_id"] or adapter.model   # 冻结模型：轮换不换候选
         result = adapter.probe(api_key)
         if not result.ok:
             return {"id": conn_id, "reverify_ok": False,
@@ -233,7 +234,8 @@ def rotate(conn_id: str, api_key: str, *, expected_revision: int, store=None) ->
         conn.execute(
             "UPDATE model_connections SET secret_ref=?, display_name=?, "
             "config_revision=config_revision+1, updated_at=? WHERE id=?",
-            (new_ref, f"GLM {'普通API' if row['account_kind']=='api' else 'Coding Plan'} · {ss.mask_key(api_key)}",
+            (new_ref, catalog.display_name(row["provider"], row["account_kind"],
+                                           ss.mask_key(api_key)),
              time.time(), conn_id))
         store.delete(row["secret_ref"])
     return {"id": conn_id, "reverify_ok": True}

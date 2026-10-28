@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS exports (
 );
 CREATE TABLE IF NOT EXISTS model_connections (
   id TEXT PRIMARY KEY,
-  provider TEXT NOT NULL,              -- glm
+  provider TEXT NOT NULL,              -- 目录 id：glm | openai | anthropic | gemini | …
   account_kind TEXT NOT NULL,          -- api | coding_plan
   protocol TEXT NOT NULL,              -- openai_compatible | anthropic | mcp
   display_name TEXT,

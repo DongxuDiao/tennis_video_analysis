@@ -12,7 +12,7 @@ const stages:Record<string,string>={external_preparing:'准备外部模型输入
 const friendly=(e:unknown)=>{const t=String(e instanceof Error?e.message:e);return /fetch|network/i.test(t)?'暂时无法连接本机服务。请确认服务已启动，然后重试。':t.includes('Traceback')?'处理未能完成，请重试。原视频与已有结果仍保留。':t}
 
 export default function App(){
- const[items,setItems]=useState<Item[]>([]),[selected,setSelected]=useState<string|null>(null),[trash,setTrash]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[loading,setLoading]=useState(true),[confirm,setConfirm]=useState<Item|null>(null),[connOpen,setConnOpen]=useState(false),[glmOn,setGlmOn]=useState(false)
+ const[items,setItems]=useState<Item[]>([]),[selected,setSelected]=useState<string|null>(null),[trash,setTrash]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[loading,setLoading]=useState(true),[confirm,setConfirm]=useState<Item|null>(null),[connOpen,setConnOpen]=useState(false),[remoteReady,setRemoteReady]=useState(false)
  const[mode,setMode]=useState<AnalysisMode>('local'),[connections,setConnections]=useState<ConnectionChoice[]>([]),[connectionId,setConnectionId]=useState('')
  const file=useRef<HTMLInputElement>(null),dialog=useRef<HTMLDialogElement>(null)
  const refresh=async()=>{try{const d=await api.get(`/api/projects?trash=${trash}`);setItems(d.projects);setLoading(false)}catch(e){setError(friendly(e));setLoading(false)}}
@@ -21,7 +21,7 @@ export default function App(){
  const upload=async(f?:File)=>{if(!f||busy)return;setBusy(true);setError('');try{const d=await api.upload(f,mode,connectionId);setTrash(false);await refresh();setSelected(d.project_id)}catch(e){setError(friendly(e))}finally{setBusy(false);if(file.current)file.current.value=''}}
  const change=async(p:Item,action:string)=>{setBusy(true);setError('');try{if(action==='purge'){const r=await fetch(`/api/projects/${p.id}`,{method:'DELETE'});if(!r.ok)throw Error('删除失败，请稍后重试。')}else await api.post(`/api/projects/${p.id}/${action}`,{});setConfirm(null);await refresh()}catch(e){setError(friendly(e))}finally{setBusy(false)}}
  const project=items.find(p=>p.id===selected)
- const loadConn=()=>{api.get('/api/model-connections').then((d:any)=>{const cs=(d.connections||[]).filter((c:any)=>c.enabled&&c.vision_ok);setConnections(cs);setGlmOn(cs.length>0);setConnectionId(old=>cs.some((c:any)=>c.id===old)?old:cs[0]?.id||'')}).catch(()=>{})}
+ const loadConn=()=>{api.get('/api/model-connections').then((d:any)=>{const cs=(d.connections||[]).filter((c:any)=>c.enabled&&c.vision_ok);setConnections(cs);setRemoteReady(cs.length>0);setConnectionId(old=>cs.some((c:any)=>c.id===old)?old:cs[0]?.id||'')}).catch(()=>{})}
  useEffect(()=>{loadConn()},[])
  return <div className="tennis-shell"><header className="site-header"><div className="brand-wrap"><button className="wordmark" onClick={()=>{setSelected(null);setTrash(false)}}><span className="brand-mark">TL</span>Tennis Lab</button><button className="conn-entry" onClick={()=>setConnOpen(true)}><PlugZap size={14}/>模型连接</button></div><span className="privacy"><LockKeyhole size={14}/> {mode==='external'?'已选择外部模型分析':'已选择本地分析'}</span></header>
  {connOpen&&<ModelConnectionDialog open onClose={()=>{setConnOpen(false);loadConn()}} changed={loadConn}/>}
